@@ -1278,8 +1278,10 @@ let barbers = JSON.parse(localStorage.getItem('bp_barbers') || '[]');
 let services = JSON.parse(localStorage.getItem('bp_services') || '[]');
 
 function save() {
-  localStorage.setItem('bp_cuts', JSON.stringify(cuts));
-  localStorage.setItem('bp_barbers', JSON.stringify(barbers));
+  // localStorage.setItem dispara automáticamente el evento 'storage' en otras
+  // pestañas/ventanas del mismo navegador — index_barbero.html lo escuchará.
+  localStorage.setItem('bp_cuts',     JSON.stringify(cuts));
+  localStorage.setItem('bp_barbers',  JSON.stringify(barbers));
   localStorage.setItem('bp_services', JSON.stringify(services));
 }
 
@@ -2070,6 +2072,36 @@ populateForm();
 document.getElementById('excel-modal').addEventListener('click', function(e) {
   if (e.target === this) closeExcelModal();
 });
+
+// ── SINCRONIZACIÓN EN TIEMPO REAL ──────────────────────────────────────────
+// Cuando el archivo del barbero guarda un corte en localStorage, este evento
+// se dispara y actualiza el dashboard del admin automáticamente.
+// Sincronización en tiempo real: cuando index_barbero.html guarda un corte,
+// este evento se dispara automáticamente en esta pestaña.
+window.addEventListener('storage', function(e) {
+  if (e.key === 'bp_cuts' || e.key === 'bp_barbers' || e.key === 'bp_services') {
+    const rawCuts     = localStorage.getItem('bp_cuts');
+    const rawBarbers  = localStorage.getItem('bp_barbers');
+    const rawServices = localStorage.getItem('bp_services');
+    if (rawCuts)     try { cuts     = JSON.parse(rawCuts);     } catch(err) {}
+    if (rawBarbers)  try { barbers  = JSON.parse(rawBarbers);  } catch(err) {}
+    if (rawServices) try { services = JSON.parse(rawServices); } catch(err) {}
+
+    refreshDashboard();
+    renderTodayCuts();
+
+    // Si el historial está visible, actualizarlo también
+    const histPage = document.getElementById('page-cortes');
+    if (histPage && histPage.classList.contains('active')) {
+      populateFilters(); renderHistory();
+    }
+    // Si servicios está visible, actualizarlo
+    const svcPage = document.getElementById('page-servicios');
+    if (svcPage && svcPage.classList.contains('active')) {
+      renderServices();
+    }
+  }
+});
 </script>
-</body>
+</body> 
 </html>
