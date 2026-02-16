@@ -1,7 +1,14 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
+  <link rel="manifest" href="manifest-admin.json">
+  <meta name="theme-color" content="#3D7EF0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="AB Admin">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+  <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BarberPro — Sistema de Gestión</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&family=Alfa+Slab+One&family=Cinzel:wght@700;900&display=swap" rel="stylesheet">
@@ -1278,10 +1285,8 @@ let barbers = JSON.parse(localStorage.getItem('bp_barbers') || '[]');
 let services = JSON.parse(localStorage.getItem('bp_services') || '[]');
 
 function save() {
-  // localStorage.setItem dispara automáticamente el evento 'storage' en otras
-  // pestañas/ventanas del mismo navegador — index_barbero.html lo escuchará.
-  localStorage.setItem('bp_cuts',     JSON.stringify(cuts));
-  localStorage.setItem('bp_barbers',  JSON.stringify(barbers));
+  localStorage.setItem('bp_cuts', JSON.stringify(cuts));
+  localStorage.setItem('bp_barbers', JSON.stringify(barbers));
   localStorage.setItem('bp_services', JSON.stringify(services));
 }
 
@@ -2072,36 +2077,57 @@ populateForm();
 document.getElementById('excel-modal').addEventListener('click', function(e) {
   if (e.target === this) closeExcelModal();
 });
+</script>
 
-// ── SINCRONIZACIÓN EN TIEMPO REAL ──────────────────────────────────────────
-// Cuando el archivo del barbero guarda un corte en localStorage, este evento
-// se dispara y actualiza el dashboard del admin automáticamente.
-// Sincronización en tiempo real: cuando index_barbero.html guarda un corte,
-// este evento se dispara automáticamente en esta pestaña.
+<script>
+// ═══════════════════════════════════════════════════════════
+//  SINCRONIZACIÓN BARBERO ↔ ADMIN  (clave única: bp_*)
+//  Cada vez que se guarda en el admin, también se publica
+//  CONF_SERVICIOS_OFICIAL para que el barbero lo lea.
+// ═══════════════════════════════════════════════════════════
+
+// Asegurarse de que window.storage use localStorage
+if (!window.storage) {
+  window.storage = {
+    set: async (key, value) => { localStorage.setItem(key, value); return true; },
+    get: async (key)        => { const v = localStorage.getItem(key); return v ? { value: v } : null; }
+  };
+}
+
+// Sobrescribir save() para que TAMBIÉN publique los servicios al barbero
+const _originalSave = window.save || null;
+(function patchSave() {
+  const origSave = save;          // la función save() ya declarada arriba
+  window.save = function() {
+    origSave();                   // guarda bp_cuts / bp_barbers / bp_services
+    // Publicar servicios al barbero (formato compatible)
+    localStorage.setItem('CONF_SERVICIOS_OFICIAL', JSON.stringify(services.map(s => s.name)));
+  };
+  // Ejecutar una vez al cargar para que el barbero ya tenga los servicios actuales
+  window.save();
+})();
+
+// Escuchar cortes nuevos del barbero (cambios en bp_cuts desde otra pestaña)
 window.addEventListener('storage', function(e) {
-  if (e.key === 'bp_cuts' || e.key === 'bp_barbers' || e.key === 'bp_services') {
-    const rawCuts     = localStorage.getItem('bp_cuts');
-    const rawBarbers  = localStorage.getItem('bp_barbers');
-    const rawServices = localStorage.getItem('bp_services');
-    if (rawCuts)     try { cuts     = JSON.parse(rawCuts);     } catch(err) {}
-    if (rawBarbers)  try { barbers  = JSON.parse(rawBarbers);  } catch(err) {}
-    if (rawServices) try { services = JSON.parse(rawServices); } catch(err) {}
-
-    refreshDashboard();
-    renderTodayCuts();
-
-    // Si el historial está visible, actualizarlo también
-    const histPage = document.getElementById('page-cortes');
-    if (histPage && histPage.classList.contains('active')) {
-      populateFilters(); renderHistory();
-    }
-    // Si servicios está visible, actualizarlo
-    const svcPage = document.getElementById('page-servicios');
-    if (svcPage && svcPage.classList.contains('active')) {
-      renderServices();
-    }
+  if (e.key === 'bp_cuts') {
+    cuts = JSON.parse(e.newValue || '[]');
+    if (typeof renderDashboard    === 'function') renderDashboard();
+    if (typeof renderTodayCuts    === 'function') renderTodayCuts();
+    if (typeof renderHistory      === 'function') renderHistory();
+    if (typeof renderBarberStats  === 'function') renderBarberStats();
+    if (typeof updateCharts       === 'function') updateCharts();
   }
 });
 </script>
-</body> 
+
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then(r => console.log('SW registrado:', r.scope))
+      .catch(e => console.warn('SW error:', e));
+  });
+}
+</script>
+</body>
 </html>
