@@ -1,7 +1,14 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
+  <link rel="manifest" href="manifest-barbero.json">
+  <meta name="theme-color" content="#3D7EF0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="AB Barbero">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+  <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>AlbertBarber — Barbero</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -847,15 +854,15 @@ const DEFAULT_SERVICES = [
 //  STORAGE
 // ═══════════════════════════════════════════
 async function loadFromStorage() {
-  // Lee directamente de localStorage — la misma fuente que index.html
   try {
-    const rawCuts     = localStorage.getItem('bp_cuts');
-    const rawBarbers  = localStorage.getItem('bp_barbers');
-    const rawServices = localStorage.getItem('bp_services');
-
-    cuts     = rawCuts     ? JSON.parse(rawCuts)     : [];
-    barbers  = rawBarbers  ? JSON.parse(rawBarbers)  : DEFAULT_BARBERS;
-    services = rawServices ? JSON.parse(rawServices) : DEFAULT_SERVICES;
+    const [rc, rb, rs] = await Promise.all([
+      window.storage.get('bp_cuts',     true).catch(() => null),
+      window.storage.get('bp_barbers',  true).catch(() => null),
+      window.storage.get('bp_services', true).catch(() => null),
+    ]);
+    cuts     = rc ? JSON.parse(rc.value) : [];
+    barbers  = rb ? JSON.parse(rb.value) : DEFAULT_BARBERS;
+    services = rs ? JSON.parse(rs.value) : DEFAULT_SERVICES;
   } catch(e) {
     cuts = []; barbers = DEFAULT_BARBERS; services = DEFAULT_SERVICES;
   }
@@ -863,25 +870,17 @@ async function loadFromStorage() {
 
 async function saveCuts() {
   try {
-    // Escribe en 'bp_cuts' — la misma clave que index.html usa para leer.
-    // localStorage.setItem dispara automáticamente el evento 'storage' en 
-    // index.html (si está abierto en otra pestaña del mismo navegador).
-    localStorage.setItem('bp_cuts', JSON.stringify(cuts));
+    await window.storage.set('bp_cuts', JSON.stringify(cuts), true);
   } catch(e) { console.warn('save error', e); }
 }
 
 async function syncCuts() {
   try {
-    const raw = localStorage.getItem('bp_cuts');
-    if (raw) {
-      const latest = JSON.parse(raw);
-      // Solo actualizar si hay cambios reales (evita re-render innecesario)
-      if (JSON.stringify(latest) !== JSON.stringify(cuts)) {
-        cuts = latest;
-        renderMyCuts();
-        updateStats();
-        renderTodayTable();
-      }
+    const rc = await window.storage.get('bp_cuts', true).catch(() => null);
+    if (rc) {
+      cuts = JSON.parse(rc.value);
+      renderMyCuts();
+      updateStats();
     }
     pulse();
   } catch(e) {}
@@ -1196,71 +1195,69 @@ init();
 </script>
 
 <script>
-// ══════════════════════════════════════════════════════════════════
-//  PUENTE DE SINCRONIZACIÓN — conecta con index.html vía localStorage
-//  Ambos archivos deben estar abiertos en el MISMO navegador/dominio.
-// ══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+//  SINCRONIZACIÓN BARBERO ↔ ADMIN  (clave única: bp_*)
+// ═══════════════════════════════════════════════════════════
 
-// Motor de almacenamiento: usa localStorage igual que index.html
-window.storage = {
-  set: async function(key, value) {
-    localStorage.setItem(key, value);
-    return true;
-  },
-  get: async function(key) {
-    const val = localStorage.getItem(key);
-    return val ? { value: val } : null;
-  }
-};
+// window.storage usando localStorage (mismo dominio que el Admin)
+if (!window.storage) {
+  window.storage = {
+    set: async (key, value) => { localStorage.setItem(key, value); return true; },
+    get: async (key)        => { const v = localStorage.getItem(key); return v ? { value: v } : null; }
+  };
+}
 
-// Al cargar, si index.html ya guardó servicios/barberos, los usamos directamente.
-// Esto reemplaza los DEFAULT_SERVICES/DEFAULT_BARBERS con los datos reales del admin.
-(function syncFromAdmin() {
-  const rawServices = localStorage.getItem('bp_services');
-  const rawBarbers  = localStorage.getItem('bp_barbers');
-
-  if (rawServices) {
-    try {
-      const adminServices = JSON.parse(rawServices);
-      if (Array.isArray(adminServices) && adminServices.length > 0) {
-        // Sobrescribir la variable global del barbero
-        services = adminServices;
-      }
-    } catch(e) {}
-  }
-
-  if (rawBarbers) {
-    try {
-      const adminBarbers = JSON.parse(rawBarbers);
-      if (Array.isArray(adminBarbers) && adminBarbers.length > 0) {
-        barbers = adminBarbers;
-      }
-    } catch(e) {}
-  }
-})();
-
-// Escuchar cambios del admin en tiempo real:
-// Si el admin agrega/elimina un servicio o barbero, el select se actualiza solo.
+// Escuchar cuando el Admin actualice los servicios
 window.addEventListener('storage', function(e) {
-  if (e.key === 'bp_services') {
-    try {
-      const updated = JSON.parse(e.newValue || localStorage.getItem('bp_services'));
-      if (Array.isArray(updated)) {
-        services = updated;
-        populateServices();
-      }
-    } catch(err) {}
+  if (e.key === 'bp_services' || e.key === 'CONF_SERVICIOS_OFICIAL') {
+    cargarServiciosDesdeAdmin();
   }
   if (e.key === 'bp_barbers') {
-    try {
-      const updated = JSON.parse(e.newValue || localStorage.getItem('bp_barbers'));
-      if (Array.isArray(updated)) {
-        barbers = updated;
-        populateBarberSelect();
-      }
-    } catch(err) {}
+    const nuevosBarberos = JSON.parse(e.newValue || '[]');
+    if (nuevosBarberos.length) {
+      barbers = nuevosBarberos;
+      populateBarberSelect();
+    }
   }
 });
+
+// Cargar servicios del admin al abrir la app barbero
+function cargarServiciosDesdeAdmin() {
+  // Fuente primaria: bp_services (mismo formato que el admin)
+  const raw = localStorage.getItem('bp_services');
+  if (raw) {
+    try {
+      const lista = JSON.parse(raw);
+      if (lista && lista.length) {
+        services = lista;                 // actualiza la variable global
+        populateServices();               // recarga el <select>
+        return;
+      }
+    } catch(e) {}
+  }
+  // Fuente de respaldo: CONF_SERVICIOS_OFICIAL (solo nombres)
+  const oficial = localStorage.getItem('CONF_SERVICIOS_OFICIAL');
+  if (oficial) {
+    try {
+      const nombres = JSON.parse(oficial);
+      services = nombres.map((n, i) => ({ id: i+1, name: n, price: 0 }));
+      populateServices();
+    } catch(e) {}
+  }
+}
+
+// Ejecutar en cuanto cargue la página
+document.addEventListener('DOMContentLoaded', cargarServiciosDesdeAdmin);
+</script>
+
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then(r => console.log('SW registrado:', r.scope))
+      .catch(e => console.warn('SW error:', e));
+  });
+}
 </script>
 </body>
 </html>
