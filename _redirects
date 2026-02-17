@@ -1,0 +1,3 @@
+# Render redirect rules
+/admin    /index.html         200
+/barbero  /index_barbero.html 200
