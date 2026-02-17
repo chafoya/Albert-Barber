@@ -1,15 +1,26 @@
 {
-  "name": "AlbertBarber — Admin",
+  "name": "AlbertBarber Admin",
   "short_name": "AB Admin",
   "description": "Sistema de gestión AlbertBarber — Panel Administrador",
   "start_url": "/index.html",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#060B14",
   "theme_color": "#3D7EF0",
   "orientation": "any",
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
   ],
   "categories": ["business", "productivity"]
 }
