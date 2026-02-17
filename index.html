@@ -2086,36 +2086,71 @@ document.getElementById('excel-modal').addEventListener('click', function(e) {
 //  CONF_SERVICIOS_OFICIAL para que el barbero lo lea.
 // ═══════════════════════════════════════════════════════════
 
-// Asegurarse de que window.storage use localStorage
+// ═══════════════════════════════════════════════════
+//  SINCRONIZACIÓN ADMIN ↔ BARBERO (CORREGIDA)
+// ═══════════════════════════════════════════════════
+
+// window.storage polyfill - DISPARA EVENTO 'storage' al guardar
 if (!window.storage) {
   window.storage = {
-    set: async (key, value) => { localStorage.setItem(key, value); return true; },
-    get: async (key)        => { const v = localStorage.getItem(key); return v ? { value: v } : null; }
+    set: async (key, value) => { 
+      localStorage.setItem(key, value); 
+      // CRÍTICO: disparar evento para otras pestañas/apps
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: key,
+        newValue: value,
+        oldValue: localStorage.getItem(key),
+        storageArea: localStorage,
+        url: window.location.href
+      }));
+      return true; 
+    },
+    get: async (key) => { 
+      const v = localStorage.getItem(key); 
+      return v ? { value: v } : null; 
+    }
   };
 }
 
-// Sobrescribir save() para que TAMBIÉN publique los servicios al barbero
-const _originalSave = window.save || null;
-(function patchSave() {
-  const origSave = save;          // la función save() ya declarada arriba
-  window.save = function() {
-    origSave();                   // guarda bp_cuts / bp_barbers / bp_services
-    // Publicar servicios al barbero (formato compatible)
-    localStorage.setItem('CONF_SERVICIOS_OFICIAL', JSON.stringify(services.map(s => s.name)));
-  };
-  // Ejecutar una vez al cargar para que el barbero ya tenga los servicios actuales
-  window.save();
-})();
+// Sobrescribir save() para DISPARAR EVENTO y publicar servicios
+const _originalSave = save;
+window.save = function() {
+  _originalSave();  // guarda bp_cuts / bp_barbers / bp_services en localStorage
+  
+  // Publicar servicios al barbero
+  localStorage.setItem('CONF_SERVICIOS_OFICIAL', JSON.stringify(services.map(s => s.name)));
+  
+  // CRÍTICO: disparar evento 'storage' manualmente para sincronización en la misma pestaña
+  ['bp_cuts', 'bp_barbers', 'bp_services'].forEach(key => {
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: key,
+      newValue: localStorage.getItem(key),
+      storageArea: localStorage
+    }));
+  });
+};
 
-// Escuchar cortes nuevos del barbero (cambios en bp_cuts desde otra pestaña)
+// Ejecutar una vez al cargar para publicar servicios iniciales
+window.save();
+
+// Escuchar cambios del barbero
 window.addEventListener('storage', function(e) {
-  if (e.key === 'bp_cuts') {
-    cuts = JSON.parse(e.newValue || '[]');
+  console.log('Admin: storage event', e.key);
+  
+  if (e.key === 'bp_cuts' || e.key === 'bp_barbers' || e.key === 'bp_services') {
+    // Recargar datos desde localStorage
+    cuts     = JSON.parse(localStorage.getItem('bp_cuts')     || '[]');
+    barbers  = JSON.parse(localStorage.getItem('bp_barbers')  || '[]');
+    services = JSON.parse(localStorage.getItem('bp_services') || '[]');
+    
+    // Re-renderizar todo
     if (typeof renderDashboard    === 'function') renderDashboard();
     if (typeof renderTodayCuts    === 'function') renderTodayCuts();
     if (typeof renderHistory      === 'function') renderHistory();
     if (typeof renderBarberStats  === 'function') renderBarberStats();
+    if (typeof renderServices     === 'function') renderServices();
     if (typeof updateCharts       === 'function') updateCharts();
+    if (typeof init               === 'function') init();
   }
 });
 </script>
