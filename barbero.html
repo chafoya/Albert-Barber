@@ -638,6 +638,28 @@ main {
   /* Bebas Neue for stat values */
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Playfair+Display:wght@400;700&display=swap');
 </style>
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script>
+    // ⚠️ REEMPLAZA ESTO CON TU CONFIGURACIÓN DE FIREBASE
+    const firebaseConfig = {
+      apiKey: "AIzaSyCXQQWXhST2-mogW9lEPRCUOrsGZmSt9ZY",
+      authDomain: "albertbarber.firebaseapp.com",
+      databaseURL: "https://albertbarber-default-rtdb.firebaseio.com",
+      projectId: "albertbarber",
+      storageBucket: "albertbarber.firebasestorage.app",
+      messagingSenderId: "552655771263",
+      appId: "1:552655771263:web:4e994f2cc40f863eadd14a"
+    };
+    
+    // Inicializar Firebase
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
+    const db = firebase.database();
+    console.log('🔥 Firebase inicializado (Barbero)');
+  </script>
 </head>
 <body>
 
@@ -854,28 +876,36 @@ const DEFAULT_SERVICES = [
 //  STORAGE
 // ═══════════════════════════════════════════
 async function loadFromStorage() {
-  try {
-    const [rc, rb, rs] = await Promise.all([
-      window.storage.get('bp_cuts',     true).catch(() => null),
-      window.storage.get('bp_barbers',  true).catch(() => null),
-      window.storage.get('bp_services', true).catch(() => null),
-    ]);
-    cuts     = rc ? JSON.parse(rc.value) : [];
-    barbers  = rb ? JSON.parse(rb.value) : DEFAULT_BARBERS;
-    services = rs ? JSON.parse(rs.value) : DEFAULT_SERVICES;
-    
-    console.log('🔄 Barbero: datos cargados');
-    console.log('  Cortes:', cuts.length, 'Barberos:', barbers.length, 'Servicios:', services.length);
-  } catch(e) {
-    cuts = []; barbers = DEFAULT_BARBERS; services = DEFAULT_SERVICES;
-    console.error('❌ Error cargando storage:', e);
-  }
+  console.log('🔄 Barbero: cargando desde Firebase...');
+  
+  // Escuchar cambios en tiempo real desde Firebase
+  db.ref('bp_cuts').on('value', snap => {
+    cuts = snap.val() || [];
+    if (typeof renderMyCuts === 'function') renderMyCuts();
+    if (typeof updateStats === 'function') updateStats();
+    console.log('🔄 Cortes actualizados:', cuts.length);
+  });
+  
+  db.ref('bp_barbers').on('value', snap => {
+    barbers = snap.val() || DEFAULT_BARBERS;
+    if (typeof populateBarberSelect === 'function') populateBarberSelect();
+    console.log('🔄 Barberos actualizados:', barbers.length);
+  });
+  
+  db.ref('bp_services').on('value', snap => {
+    services = snap.val() || DEFAULT_SERVICES;
+    if (typeof populateServices === 'function') populateServices();
+    console.log('🔄 Servicios actualizados:', services.length);
+  });
 }
 
 async function saveCuts() {
   try {
-    await window.storage.set('bp_cuts', JSON.stringify(cuts), true);
-  } catch(e) { console.warn('save error', e); }
+    await db.ref('bp_cuts').set(cuts);
+    console.log('💾 Corte guardado en Firebase');
+  } catch(e) { 
+    console.error('❌ Error guardando en Firebase:', e);
+  }
 }
 
 async function syncCuts() {
