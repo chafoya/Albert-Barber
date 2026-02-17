@@ -1,5 +1,5 @@
-// AlbertBarber Service Worker — v1.0
-const CACHE = 'albert-barber-v1';
+// AlbertBarber Service Worker — v1.2
+const CACHE = 'albertbarber-v1.2';
 const ASSETS = [
   '/index.html',
   '/index_barbero.html',
@@ -11,6 +11,7 @@ const ASSETS = [
 
 // Instalar: cachear todos los archivos
 self.addEventListener('install', e => {
+  console.log('SW: Instalando v1.2...');
   e.waitUntil(
     caches.open(CACHE).then(cache => cache.addAll(ASSETS))
   );
@@ -19,6 +20,7 @@ self.addEventListener('install', e => {
 
 // Activar: borrar caches viejos
 self.addEventListener('activate', e => {
+  console.log('SW: Activando v1.2...');
   e.waitUntil(
     caches.keys().then(keys =>
       Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
