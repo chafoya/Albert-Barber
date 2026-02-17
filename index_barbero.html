@@ -863,8 +863,12 @@ async function loadFromStorage() {
     cuts     = rc ? JSON.parse(rc.value) : [];
     barbers  = rb ? JSON.parse(rb.value) : DEFAULT_BARBERS;
     services = rs ? JSON.parse(rs.value) : DEFAULT_SERVICES;
+    
+    console.log('🔄 Barbero: datos cargados');
+    console.log('  Cortes:', cuts.length, 'Barberos:', barbers.length, 'Servicios:', services.length);
   } catch(e) {
     cuts = []; barbers = DEFAULT_BARBERS; services = DEFAULT_SERVICES;
+    console.error('❌ Error cargando storage:', e);
   }
 }
 
@@ -1199,42 +1203,50 @@ init();
 //  SINCRONIZACIÓN BARBERO ↔ ADMIN  (clave única: bp_*)
 // ═══════════════════════════════════════════════════════════
 
-// window.storage usando localStorage (mismo dominio que el Admin)
+// ═══════════════════════════════════════════════════
+//  SINCRONIZACIÓN BARBERO ↔ ADMIN (CORREGIDA)
+// ═══════════════════════════════════════════════════
+
+// window.storage polyfill - DISPARA EVENTO 'storage' al guardar
 if (!window.storage) {
   window.storage = {
-    set: async (key, value) => { localStorage.setItem(key, value); return true; },
-    get: async (key)        => { const v = localStorage.getItem(key); return v ? { value: v } : null; }
+    set: async (key, value) => { 
+      localStorage.setItem(key, value); 
+      // CRÍTICO: disparar evento para otras pestañas/apps
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: key,
+        newValue: value,
+        oldValue: localStorage.getItem(key),
+        storageArea: localStorage,
+        url: window.location.href
+      }));
+      return true; 
+    },
+    get: async (key) => { 
+      const v = localStorage.getItem(key); 
+      return v ? { value: v } : null; 
+    }
   };
 }
 
-// Escuchar cuando el Admin actualice los servicios
-window.addEventListener('storage', function(e) {
-  if (e.key === 'bp_services' || e.key === 'CONF_SERVICIOS_OFICIAL') {
-    cargarServiciosDesdeAdmin();
-  }
-  if (e.key === 'bp_barbers') {
-    const nuevosBarberos = JSON.parse(e.newValue || '[]');
-    if (nuevosBarberos.length) {
-      barbers = nuevosBarberos;
-      populateBarberSelect();
-    }
-  }
-});
-
-// Cargar servicios del admin al abrir la app barbero
+// Cargar servicios y barberos del admin
 function cargarServiciosDesdeAdmin() {
-  // Fuente primaria: bp_services (mismo formato que el admin)
+  console.log('Barbero: cargando servicios desde admin...');
+  
+  // Fuente primaria: bp_services (mismo formato que admin)
   const raw = localStorage.getItem('bp_services');
   if (raw) {
     try {
       const lista = JSON.parse(raw);
       if (lista && lista.length) {
-        services = lista;                 // actualiza la variable global
-        populateServices();               // recarga el <select>
+        services = lista;
+        populateServices();
+        console.log('✅ Servicios cargados:', services.length);
         return;
       }
-    } catch(e) {}
+    } catch(e) { console.error('Error parseando bp_services:', e); }
   }
+  
   // Fuente de respaldo: CONF_SERVICIOS_OFICIAL (solo nombres)
   const oficial = localStorage.getItem('CONF_SERVICIOS_OFICIAL');
   if (oficial) {
@@ -1242,12 +1254,59 @@ function cargarServiciosDesdeAdmin() {
       const nombres = JSON.parse(oficial);
       services = nombres.map((n, i) => ({ id: i+1, name: n, price: 0 }));
       populateServices();
-    } catch(e) {}
+      console.log('✅ Servicios cargados (respaldo):', services.length);
+    } catch(e) { console.error('Error parseando CONF_SERVICIOS_OFICIAL:', e); }
   }
 }
 
-// Ejecutar en cuanto cargue la página
-document.addEventListener('DOMContentLoaded', cargarServiciosDesdeAdmin);
+function cargarBarberosDesdeAdmin() {
+  console.log('Barbero: cargando barberos desde admin...');
+  const raw = localStorage.getItem('bp_barbers');
+  if (raw) {
+    try {
+      const lista = JSON.parse(raw);
+      if (lista && lista.length) {
+        barbers = lista;
+        if (typeof populateBarberSelect === 'function') {
+          populateBarberSelect();
+        }
+        console.log('✅ Barberos cargados:', barbers.length);
+      }
+    } catch(e) { console.error('Error parseando bp_barbers:', e); }
+  }
+}
+
+// Escuchar cambios del Admin en tiempo real
+window.addEventListener('storage', function(e) {
+  console.log('Barbero: storage event', e.key);
+  
+  if (e.key === 'bp_services' || e.key === 'CONF_SERVICIOS_OFICIAL') {
+    cargarServiciosDesdeAdmin();
+  }
+  
+  if (e.key === 'bp_barbers') {
+    cargarBarberosDesdeAdmin();
+  }
+  
+  if (e.key === 'bp_cuts') {
+    // Recargar cortes si el admin los modificó
+    const nuevosCuts = JSON.parse(e.newValue || '[]');
+    if (nuevosCuts.length !== cuts.length) {
+      cuts = nuevosCuts;
+      if (typeof renderMyCuts    === 'function') renderMyCuts();
+      if (typeof renderTodayTable === 'function') renderTodayTable();
+      if (typeof updateStats     === 'function') updateStats();
+      console.log('✅ Cortes actualizados:', cuts.length);
+    }
+  }
+});
+
+// Ejecutar al cargar la página
+document.addEventListener('DOMContentLoaded', function() {
+  cargarServiciosDesdeAdmin();
+  cargarBarberosDesdeAdmin();
+  console.log('🔄 Sincronización barbero inicializada');
+});
 </script>
 
 <script>
